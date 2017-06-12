@@ -510,7 +510,47 @@ class CUPI(object):
             return 'User directory number not found: {0}'.format(dtmf_access_id)
         else:
             return 'Unknown result: {0} {1} {2}'.format(resp.status_code, resp.reason, resp.text)
+        
+    def change_user_vm_pin_by_oid(self, user_oid, new_pin):
+        """
 
+        :param user_oid:
+        :param new_pin:
+        :return:
+        """
+
+        url = '{0}/users/{1}/credential/pin'.format(self.url_base, user_oid)
+        body = {'Credentials': new_pin,
+                'HackCount': 0,
+                'TimeHacked':''
+               }
+
+        resp = self.cuc.put(url, json=body, timeout=self.timeout)
+
+        if resp.status_code != 204:
+            return 'Something went wrong: {0} {1} {2}'.format(resp.status_code, resp.reason, resp.text)
+        else:
+            return 'Pin updated successfully'
+
+    def unlock_user_vm_pin_by_oid(self, user_oid):
+        """
+
+        :param user_oid:
+        :return:
+        """
+
+        url = '{0}/users/{1}/credential/pin'.format(self.url_base, user_oid)
+        body = {'HackCount': 0,
+                'TimeHacked':''
+               }
+
+        resp = self.cuc.put(url, json=body, timeout=self.timeout)
+
+        if resp.status_code != 204:
+            return 'Something went wrong: {0} {1}'.format(resp.status_code, resp.reason, resp.text)
+        else:
+            return 'Pin unlocked successfully'
+        
     def delete_user(self, user_oid):
         """
 
