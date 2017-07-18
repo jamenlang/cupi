@@ -7,8 +7,9 @@ Dependencies:
 """
 
 import requests
-
-
+#requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += ':ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:ECDH+HIGH:DH+HIGH:ECDH+3DES:DH+3DES:RSA+AESGCM:RSA+AES:RSA+HIGH:RSA+3DES:!aNULL:!eNULL:!MD5'
+#requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += ':ECDH+AESGCM:ECDH+CHACHA20:DH+AESGCM:DH+CHACHA20:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:RSA+AESGCM:RSA+AES:!aNULL:!eNULL:!MD5'
+requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += 'HIGH:!DH:!aNULL'
 class CUPI(object):
     """
     Class for configuring Cisco Unity
@@ -405,10 +406,10 @@ class CUPI(object):
                  dtmf_access_id,
                  first_name,
                  last_name,
-                 user_template,
-                 timezone,
-                 is_vm_enrolled='false',
-                 country='AU',
+                 user_template='voicemailusertemplate',
+                 timezone='10',
+                 is_vm_enrolled='true',
+                 country='US',
                  use_default_timezone='false',
                  cred_must_change='false'):
         """
@@ -433,7 +434,9 @@ class CUPI(object):
         """
         url = '{0}/users?templateAlias={1}'.format(self.url_base, user_template)
         body = {
+            'LdapType': 3,
             'Alias': display_name,
+            'LdapCcmUserId': display_name,
             'DisplayName': display_name,
             'DtmfAccessId': dtmf_access_id,
             'FirstName': first_name,
@@ -498,7 +501,10 @@ class CUPI(object):
             user_oid = resp.json()['User']['ObjectId']
 
             url = '{0}/users/{1}/credential/pin'.format(self.url_base, user_oid)
-            body = {'Credentials': new_pin}
+            body = {'Credentials': new_pin,
+                    'HackCount': 0,
+                    'TimeHacked':''
+                   }
 
             resp = self.cuc.put(url, json=body, timeout=self.timeout)
 
@@ -510,7 +516,42 @@ class CUPI(object):
             return 'User directory number not found: {0}'.format(dtmf_access_id)
         else:
             return 'Unknown result: {0} {1} {2}'.format(resp.status_code, resp.reason, resp.text)
-        
+
+    def change_user_web_password(self, dtmf_access_id, new_password):
+        """
+
+        :param dtmf_access_id:
+        :param new_password:
+        :return:
+        """
+
+        # find user oid by searching with the directory number
+        url = '{0}/users?query=(DtmfAccessId%20is%20{1})'.format(self.url_base, dtmf_access_id)
+        resp = self.cuc.get(url, timeout=self.timeout)
+
+        if resp.status_code != 200:
+            return 'Something went wrong: {0} {1} {2}'.format(resp.status_code, resp.reason, resp.text)
+        elif resp.json()['@total'] == '1':
+            user_oid = resp.json()['User']['ObjectId']
+
+            url = '{0}/users/{1}/credential/password'.format(self.url_base, user_oid)
+            body = {'Credentials': new_password,
+                    'HackCount': 0,
+                    'CredMustChange': 'false',
+                    'TimeHacked':''
+                   }
+
+            resp = self.cuc.put(url, json=body, timeout=self.timeout)
+
+            if resp.status_code != 204:
+                return 'Something went wrong: {0} {1} {2}'.format(resp.status_code, resp.reason, resp.text)
+            else:
+                return 'Password updated successfully'
+        elif resp.json()['@total'] == '0':
+            return 'User directory number not found: {0}'.format(dtmf_access_id)
+        else:
+            return 'Unknown result: {0} {1} {2}'.format(resp.status_code, resp.reason, resp.text)
+
     def change_user_vm_pin_by_oid(self, user_oid, new_pin):
         """
 
@@ -532,6 +573,29 @@ class CUPI(object):
         else:
             return 'Pin updated successfully'
 
+    def change_user_web_password_by_oid(self, user_oid, new_password):
+        """
+
+        :param user_oid:
+        :param new_password:
+        :return:
+        """
+
+        url = '{0}/users/{1}/credential/password'.format(self.url_base, user_oid)
+        body = {
+                'Credentials': new_password,
+                'HackCount': 0,
+                'CredMustChange': 'false',
+                'TimeHacked':''
+               }
+
+        resp = self.cuc.put(url, json=body, timeout=self.timeout)
+
+        if resp.status_code != 204:
+            return 'Something went wrong: {0} {1} {2}'.format(resp.status_code, resp.reason, resp.text)
+        else:
+            return 'Password updated successfully'
+
     def unlock_user_vm_pin_by_oid(self, user_oid):
         """
 
@@ -550,7 +614,7 @@ class CUPI(object):
             return 'Something went wrong: {0} {1}'.format(resp.status_code, resp.reason, resp.text)
         else:
             return 'Pin unlocked successfully'
-        
+
     def delete_user(self, user_oid):
         """
 
@@ -576,6 +640,31 @@ class CUPI(object):
 
         url = '{0}/callhandlertemplates'.format(self.url_base)
         return self.cuc.get(url, timeout=self.timeout).json()['CallhandlerTemplate']['ObjectId']
+
+    def get_vm_messages_for_oid(self,folder,user_oid):
+        """
+        Method to get the messages in the specified folder for the user oid
+        :return: messages in folder for the oid
+        """
+
+        url = '{0}/mailbox/folders/{1}/messages?userobjectid={2}'.format(self.url_base, folder, user_oid)
+        return self.cuc.get(url, timeout=self.timeout).json()['Message']
+
+    def delete_vm_message(self,message_id,user_oid):
+        """
+        Method to delete messages for the message id
+        :return: delete message by message id for the user oid
+        """
+
+        url = '{0}/messages/{1}?userobjectid={2}&harddelete=true'.format(self.url_base, message_id, user_oid)
+        resp = self.cuc.delete(url, timeout=self.timeout)
+        return url
+        if resp.status_code == 204:
+            return 'Message deleted'
+        elif resp.status_code == 404:
+            return 'Message not found'
+        else:
+            return 'Unknown result: {0} {1}'.format(resp.status_code, resp.reason, resp.text)
 
     def get_call_handlers(self, mini=True):
         """
@@ -844,9 +933,9 @@ class CUPI(object):
     def update_caller_input(self,
                             call_handler_oid,
                             target_call_handler_oid,
-                            input_key='1',
+                            input_key='0',
                             action='2',
-                            target_conversation='PHGreeting',
+                            target_conversation='PHTransfer',
                             body={}):
         """
 
@@ -891,4 +980,3 @@ class CUPI(object):
             return 'Call handler not found'
         else:
             return 'Unknown result: {0} {1} {2}'.format(resp.status_code, resp.reason, resp.text)
-
